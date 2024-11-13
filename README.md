@@ -21,26 +21,26 @@ PDF Co-Viewer is a real-time collaborative PDF viewing application built with Py
 
 1. Clone the repository:
 
-`git clone https://github.com/yourusername/pdf-co-viewer.git
-cd pdf-co-viewer`
+### `git clone https://github.com/yourusername/pdf-co-viewer.git`
+### `cd pdf-co-viewer`
 
 
 2. Create a virtual environment and activate it:
 
-`python -m venv venv
-source venv/bin/activate # On Windows, use venv\Scripts\activate`
+### `python -m venv venv`
+### `source venv/bin/activate # On Windows, use venv\Scripts\activate`
 
 
 3. Install the required packages:
 
-`pip install -r requirements.txt`
+### `pip install -r requirements.txt`
 
 
 ## Usage
 
 1. Start the Flask application:
 
-`python app.py`
+### `python app.py`
 
 
 2. Open a web browser and navigate to `http://localhost:5000`.

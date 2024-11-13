@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Co-Viewer</title>
+</head>
+<body>
+    <h1>PDF Co-Viewer</h1>
+    <h2>Create a new session</h2>
+    <form action="{{ url_for('create_session') }}" method="post">
+        <input type="text" name="session_name" placeholder="Enter session name" required>
+        <button type="submit">Create Session</button>
+    </form>
+
+    <h2>Join an existing session</h2>
+    {% if active_sessions %}
+        <ul>
+        {% for session_id, session_info in active_sessions.items() %}
+            <li>
+                {{ session_info.name }}
+                <form action="{{ url_for('join_session', session_id=session_id) }}" method="post">
+                    <input type="text" name="user_name" placeholder="Enter your name" required>
+                    <button type="submit">Join Session</button>
+                </form>
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p>No active sessions available.</p>
+    {% endif %}
+</body>
+</html>

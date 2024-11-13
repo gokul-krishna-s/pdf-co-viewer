@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        #pdf-viewer { border: 1px solid #ccc; margin-bottom: 10px; }
+        #controls, #user-controls { margin-bottom: 10px; }
+        #user-list, #pending-users { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div id="pdf-viewer"></div>
+    <div id="controls">
+        <button id="prev">Previous</button>
+        <span id="page-num"></span>
+        <button id="next">Next</button>
+    </div>
+    <div id="user-controls" style="display: none;">
+        <input type="checkbox" id="follow-admin" checked>
+        <label for="follow-admin">Follow Admin</label>
+    </div>
+    <div id="user-list">
+        <h3>Users</h3>
+        <ul id="active-users"></ul>
+    </div>
+    <div id="pending-users" style="display: none;">
+        <h3>Pending Users</h3>
+        <ul id="pending-user-list"></ul>
+    </div>
+    <div id="upload-section" style="display: none;">
+        <h3>Upload PDF</h3>
+        <form id="upload-form" enctype="multipart/form-data">
+            <input type="file" name="pdf_file" accept="application/pdf">
+            <button type="submit">Upload</button>
+        </form>
+    </div>
+
+    <script>
+        const socket = io();
+        let pdfDoc = null;
+        let pageNum = 1;
+        let isAdmin = {{ 'true' if user_type == 'admin' else 'false' }};
+        let followAdmin = true;
+        const sessionId = '{{ session_id }}';
+        let adminCurrentPage = 1;
+
+        function loadPDF(filename) {
+            pdfjsLib.getDocument('/uploads/' + filename).promise.then(pdf => {
+                pdfDoc = pdf;
+                pageNum = 1;  // Reset to first page when loading a new PDF
+                renderPage(pageNum);
+            });
+        }
+
+        {% if pdf_file %}
+            loadPDF('{{ pdf_file }}');
+        {% endif %}
+
+        function renderPage(num) {
+            if (!pdfDoc) return;
+            pdfDoc.getPage(num).then(page => {
+                const scale = 1.5;
+                const viewport = page.getViewport({ scale });
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+
+                page.render(renderContext);
+                document.getElementById('pdf-viewer').innerHTML = '';
+                document.getElementById('pdf-viewer').appendChild(canvas);
+                document.getElementById('page-num').textContent = `Page ${num} of ${pdfDoc.numPages}`;
+            });
+        }
+
+        function changePage(delta) {
+            if (pdfDoc && pageNum + delta > 0 && pageNum + delta <= pdfDoc.numPages) {
+                pageNum += delta;
+                if (isAdmin) {
+                    socket.emit('change_page', { page: pageNum });
+                }
+                renderPage(pageNum);
+            }
+        }
+
+        document.getElementById('prev').addEventListener('click', () => changePage(-1));
+        document.getElementById('next').addEventListener('click', () => changePage(1));
+
+        const followAdminCheckbox = document.getElementById('follow-admin');
+        followAdminCheckbox.addEventListener('change', (event) => {
+            followAdmin = event.target.checked;
+            if (followAdmin && !isAdmin) {
+                pageNum = adminCurrentPage;
+                renderPage(pageNum);
+            }
+        });
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            if (isAdmin) {
+                document.getElementById('pending-users').style.display = 'block';
+                document.getElementById('upload-section').style.display = 'block';
+            } else {
+                document.getElementById('user-controls').style.display = 'block';
+                socket.emit('get_admin_page');
+            }
+        });
+
+        socket.on('admin_connected', (data) => {
+            if (data.pdf_uploaded) {
+                document.getElementById('upload-section').style.display = 'none';
+            }
+        });
+
+        socket.on('user_joined', (data) => {
+            const userList = document.getElementById('active-users');
+            const li = document.createElement('li');
+            li.textContent = data.name;
+            userList.appendChild(li);
+        });
+
+        socket.on('page_changed', (data) => {
+            adminCurrentPage = data.page;
+            if (!isAdmin && followAdmin) {
+                pageNum = adminCurrentPage;
+                renderPage(pageNum);
+            }
+        });
+
+        socket.on('admin_page', (data) => {
+            adminCurrentPage = data.page;
+            if (followAdmin) {
+                pageNum = adminCurrentPage;
+                renderPage(pageNum);
+            }
+        });
+
+        socket.on('user_accepted', (data) => {
+            const pendingList = document.getElementById('pending-user-list');
+            const userList = document.getElementById('active-users');
+            const pendingItem = Array.from(pendingList.children).find(li => li.textContent.includes(data.name));
+            if (pendingItem) {
+                pendingList.removeChild(pendingItem);
+                const li = document.createElement('li');
+                li.textContent = data.name;
+                userList.appendChild(li);
+            }
+        });
+
+        socket.on('user_rejected', (data) => {
+            const pendingList = document.getElementById('pending-user-list');
+            const pendingItem = Array.from(pendingList.children).find(li => li.textContent.includes(data.name));
+            if (pendingItem) {
+                pendingList.removeChild(pendingItem);
+            }
+        });
+
+        socket.on('pdf_uploaded', (data) => {
+            loadPDF(data.filename);
+            if (isAdmin) {
+                document.getElementById('upload-section').style.display = 'none';
+            }
+        });
+
+        document.getElementById('upload-form').addEventListener('submit', (event) => {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            fetch(`/upload_pdf/${sessionId}`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (response.ok) {
+                    console.log('PDF uploaded successfully');
+                } else {
+                    console.error('Failed to upload PDF');
+                }
+            });
+        });
+
+        function acceptUser(userName) {
+            socket.emit('accept_user', { user_name: userName });
+        }
+
+        function rejectUser(userName) {
+            socket.emit('reject_user', { user_name: userName });
+        }
+    </script>
+</body>
+</html>
